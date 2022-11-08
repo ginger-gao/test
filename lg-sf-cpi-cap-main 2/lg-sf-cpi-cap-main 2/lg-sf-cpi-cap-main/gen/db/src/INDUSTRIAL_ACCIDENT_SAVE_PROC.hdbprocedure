@@ -1,0 +1,79 @@
+PROCEDURE INDUSTRIAL_ACCIDENT_SAVE_PROC (
+    IN  I_TABLE TABLE(USERID NVARCHAR(128),
+                     ACCIDENTID NVARCHAR(25),
+                     COMPANY NVARCHAR(25),
+                     CUDKEY NVARCHAR(1),
+                     RECORD NCLOB              
+    ),
+    OUT O_TABLE TABLE(USERID NVARCHAR(128),
+                     ACCIDENTID NVARCHAR(25),
+                     COMPANY NVARCHAR(25),
+                     CUDKEY NVARCHAR(1)                  
+    )
+    
+)
+LANGUAGE SQLSCRIPT
+SQL SECURITY INVOKER 
+
+AS
+BEGIN
+
+    DECLARE v_cnt BIGINT;
+
+    SELECT COUNT(*)
+    INTO   v_cnt
+    FROM   :I_TABLE
+    ;
+
+    O_TABLE_NEW =   SELECT  A.USERID
+                        ,A.ACCIDENTID
+                        ,A.COMPANY
+                        ,A.CUDKEY
+                        ,A.RECORD
+                FROM    :I_TABLE A
+                LEFT OUTER JOIN INDUSTRIAL_ACCIDENT B
+                ON A.USERID = B.USERID
+                AND A.ACCIDENTID = B.ACCIDENTID
+                AND A.COMPANY = B.COMPANY
+                WHERE B.USERID IS NULL
+                WITH HINT (NO_INLINE)
+                ;
+
+    O_TABLE_OLD =   SELECT  A.USERID
+                        ,A.ACCIDENTID
+                        ,A.COMPANY
+                        ,A.CUDKEY
+                        ,A.RECORD
+                FROM    :I_TABLE A
+                INNER JOIN INDUSTRIAL_ACCIDENT B
+                ON A.USERID = B.USERID
+                AND A.ACCIDENTID = B.ACCIDENTID
+                AND A.COMPANY = B.COMPANY         
+                WITH HINT (NO_INLINE)
+                ;
+
+    INSERT INTO INDUSTRIAL_ACCIDENT(USERID,ACCIDENTID,COMPANY,CUDKEY,RECORD,CREATEDDATETIME,LASTMODIFIEDDATETIME,CREATEDBY,LASTMODIFIEDBY)    
+    SELECT USERID,ACCIDENTID,COMPANY,CUDKEY,RECORD,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,CURRENT_USER,CURRENT_USER FROM :O_TABLE_NEW;
+
+	IF NOT IS_EMPTY(:O_TABLE_OLD) THEN
+        MERGE INTO INDUSTRIAL_ACCIDENT A USING :O_TABLE_OLD B 
+            ON A.USERID = B.USERID
+            AND A.ACCIDENTID = B.ACCIDENTID
+            AND A.COMPANY = B.COMPANY   
+        WHEN MATCHED THEN UPDATE SET A.RECORD = B.RECORD, A.CUDKEY = B.CUDKEY, A.LASTMODIFIEDDATETIME = CURRENT_TIMESTAMP, A.LASTMODIFIEDBY = CURRENT_USER
+        ;
+    END IF;
+
+    O_TABLE =  SELECT  USERID
+                    ,ACCIDENTID
+                    ,COMPANY
+                    ,CUDKEY
+                FROM    :O_TABLE_OLD
+               UNION ALL
+               SELECT  USERID
+                    ,ACCIDENTID
+                    ,COMPANY
+                    ,CUDKEY
+                FROM    :O_TABLE_NEW 
+            ;                
+END

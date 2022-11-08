@@ -1,0 +1,87 @@
+PROCEDURE FOLOCATIONGROUP_SAVE_PROC (
+    IN  I_TABLE TABLE(EXTERNALCODE NVARCHAR(128),
+                     STARTDATE NVARCHAR(25),
+                     LEGALENTITYID NVARCHAR(128),
+                     CUDKEY NVARCHAR(1),
+                     RECORD NCLOB              
+    ),
+    OUT O_TABLE TABLE(EXTERNALCODE NVARCHAR(128),
+                     STARTDATE NVARCHAR(25),
+                     LEGALENTITYID NVARCHAR(128),
+                     CUDKEY NVARCHAR(1),
+                     UNIQUEKEY BIGINT                     
+    )
+)
+LANGUAGE SQLSCRIPT
+SQL SECURITY INVOKER 
+
+AS
+BEGIN
+
+    DECLARE v_cnt BIGINT;
+
+    SELECT COUNT(*)
+    INTO   v_cnt
+    FROM   :I_TABLE
+    ;
+
+    O_TABLE_NEW =   SELECT  A.EXTERNALCODE
+                        ,A.STARTDATE
+                        ,A.LEGALENTITYID
+                        ,A.CUDKEY
+                        ,A.RECORD
+                        ,CASE WHEN B.UNIQUEKEY IS NULL THEN FOLOCATIONGROUP_SEQ.NEXTVAL ELSE B.UNIQUEKEY END AS UNIQUEKEY
+                FROM    :I_TABLE A
+                LEFT OUTER JOIN (SELECT * FROM FOLOCATIONGROUP WHERE CUDKEY != 'D') B
+                ON A.EXTERNALCODE = B.EXTERNALCODE
+                AND A.STARTDATE = B.STARTDATE
+                AND A.LEGALENTITYID = B.LEGALENTITYID         
+                WHERE B.UNIQUEKEY IS NULL
+                WITH HINT (NO_INLINE)
+                ;
+
+    O_TABLE_OLD =   SELECT  A.EXTERNALCODE
+                        ,A.STARTDATE
+                        ,A.LEGALENTITYID
+                        ,A.CUDKEY
+                        ,A.RECORD
+                        ,B.UNIQUEKEY
+                FROM    :I_TABLE A
+                INNER JOIN (SELECT * FROM FOLOCATIONGROUP WHERE CUDKEY != 'D') B
+                ON A.EXTERNALCODE = B.EXTERNALCODE
+                AND A.STARTDATE = B.STARTDATE
+                AND A.LEGALENTITYID = B.LEGALENTITYID      
+                WITH HINT (NO_INLINE)
+                ;
+
+    INSERT INTO FOLOCATIONGROUP(EXTERNALCODE,STARTDATE,LEGALENTITYID,CUDKEY,RECORD,UNIQUEKEY,CREATEDDATETIME,LASTMODIFIEDDATETIME,CREATEDBY,LASTMODIFIEDBY)   
+    SELECT EXTERNALCODE, STARTDATE, LEGALENTITYID, CUDKEY, RECORD, UNIQUEKEY, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_USER, CURRENT_USER FROM :O_TABLE_NEW
+    ;
+
+	IF NOT IS_EMPTY(:O_TABLE_OLD) THEN
+        MERGE INTO FOLOCATIONGROUP A USING :O_TABLE_OLD B 
+            ON A.EXTERNALCODE = B.EXTERNALCODE
+            AND A.STARTDATE = B.STARTDATE
+            AND A.LEGALENTITYID = B.LEGALENTITYID
+            AND A.UNIQUEKEY = B.UNIQUEKEY
+        WHEN MATCHED THEN UPDATE SET A.RECORD = B.RECORD, A.CUDKEY = B.CUDKEY, A.LASTMODIFIEDDATETIME = CURRENT_TIMESTAMP, A.LASTMODIFIEDBY = CURRENT_USER
+        ;
+    END IF;
+
+
+
+    O_TABLE =  SELECT  EXTERNALCODE
+                        ,STARTDATE
+                        ,LEGALENTITYID
+                        ,CUDKEY
+                        ,UNIQUEKEY    
+                FROM    :O_TABLE_OLD
+               UNION ALL
+               SELECT  EXTERNALCODE
+                        ,STARTDATE
+                        ,LEGALENTITYID
+                        ,CUDKEY
+                        ,UNIQUEKEY    
+                FROM    :O_TABLE_NEW 
+            ;                
+END

@@ -1,0 +1,94 @@
+PROCEDURE EMPJOB_SAVE_PROC (
+    IN  I_TABLE TABLE(USERID NVARCHAR(20),
+                     STARTDATE NVARCHAR(25),
+                     SEQNUMBER NVARCHAR(2),
+                     CUDKEY NVARCHAR(1),
+                     JOBID NVARCHAR(14),
+                     RECORD NCLOB              
+    ),
+    OUT O_TABLE TABLE(USERID NVARCHAR(20),
+                     STARTDATE NVARCHAR(25),
+                     SEQNUMBER NVARCHAR(2),
+                     CUDKEY NVARCHAR(1),
+                     JOBID NVARCHAR(14),
+                     UNIQUEKEY BIGINT                     
+    )
+    
+)
+LANGUAGE SQLSCRIPT
+SQL SECURITY INVOKER 
+
+AS
+BEGIN
+
+    DECLARE v_cnt BIGINT;
+
+    SELECT COUNT(*)
+    INTO   v_cnt
+    FROM   :I_TABLE
+    ;
+
+    O_TABLE_NEW =   SELECT  A.USERID
+                        ,A.STARTDATE
+                        ,A.SEQNUMBER
+                        ,A.CUDKEY
+                        ,A.JOBID
+                        ,A.RECORD
+                        ,CASE WHEN B.UNIQUEKEY IS NULL THEN EMPJOB_USERID_SEQ.NEXTVAL ELSE B.UNIQUEKEY END AS UNIQUEKEY
+                FROM    :I_TABLE A
+                LEFT OUTER JOIN (SELECT * FROM EMPJOB WHERE CUDKEY != 'D') B
+                ON A.USERID = B.USERID
+                AND A.STARTDATE = B.STARTDATE
+                AND A.SEQNUMBER = B.SEQNUMBER         
+                WHERE B.UNIQUEKEY IS NULL
+                WITH HINT (NO_INLINE)
+                ;
+
+    O_TABLE_OLD =   SELECT  A.USERID
+                        ,A.STARTDATE
+                        ,A.SEQNUMBER
+                        ,A.RECORD
+                        ,A.CUDKEY
+                        ,A.JOBID
+                        ,B.UNIQUEKEY
+                FROM    :I_TABLE A
+                INNER JOIN (SELECT * FROM EMPJOB WHERE CUDKEY != 'D') B
+                ON A.USERID = B.USERID
+                AND A.STARTDATE = B.STARTDATE
+                AND A.SEQNUMBER = B.SEQNUMBER         
+                WITH HINT (NO_INLINE)
+                ;
+
+    INSERT INTO EMPJOB(USERID,STARTDATE,SEQNUMBER,CUDKEY,JOBID,RECORD,UNIQUEKEY,CREATEDDATETIME,LASTMODIFIEDDATETIME,CREATEDBY,LASTMODIFIEDBY)   
+    SELECT USERID, STARTDATE, SEQNUMBER, CUDKEY, JOBID, RECORD, UNIQUEKEY, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_USER, CURRENT_USER FROM :O_TABLE_NEW
+    ;
+
+	IF NOT IS_EMPTY(:O_TABLE_OLD) THEN
+        MERGE INTO EMPJOB A USING :O_TABLE_OLD B 
+            ON A.USERID = B.USERID
+            AND A.STARTDATE = B.STARTDATE
+            AND A.SEQNUMBER = B.SEQNUMBER
+            AND A.UNIQUEKEY = B.UNIQUEKEY
+        WHEN MATCHED THEN UPDATE SET A.RECORD = B.RECORD, A.CUDKEY = B.CUDKEY, A.JOBID = B.JOBID, A.LASTMODIFIEDDATETIME = CURRENT_TIMESTAMP, A.LASTMODIFIEDBY = CURRENT_USER
+        ;
+    END IF;
+
+
+
+    O_TABLE =  SELECT  USERID
+                        ,STARTDATE
+                        ,SEQNUMBER
+                        ,CUDKEY
+                        ,JOBID
+                        ,UNIQUEKEY    
+                FROM    :O_TABLE_OLD
+               UNION ALL
+               SELECT  USERID
+                        ,STARTDATE
+                        ,SEQNUMBER
+                        ,CUDKEY
+                        ,JOBID
+                        ,UNIQUEKEY    
+                FROM    :O_TABLE_NEW 
+            ;                
+END

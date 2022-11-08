@@ -1,0 +1,70 @@
+PROCEDURE JOBAPPLICATION_SAVE_PROC (
+    IN  I_TABLE TABLE(JOBREQID NVARCHAR(128),
+                     APPLICATIONID NVARCHAR(25),
+                     CUDKEY NVARCHAR(1),
+                     RECORD NCLOB              
+    ),
+    OUT O_TABLE TABLE(JOBREQID NVARCHAR(128),
+                     APPLICATIONID NVARCHAR(25),
+                     CUDKEY NVARCHAR(1)                  
+    )
+    
+)
+LANGUAGE SQLSCRIPT
+SQL SECURITY INVOKER 
+
+AS
+BEGIN
+
+    DECLARE v_cnt BIGINT;
+
+    SELECT COUNT(*)
+    INTO   v_cnt
+    FROM   :I_TABLE
+    ;
+
+    O_TABLE_NEW =   SELECT  A.JOBREQID
+                        ,A.APPLICATIONID
+                        ,A.CUDKEY
+                        ,A.RECORD
+                FROM    :I_TABLE A
+                LEFT OUTER JOIN JOBAPPLICATION B
+                ON A.JOBREQID = B.JOBREQID
+                AND A.APPLICATIONID = B.APPLICATIONID
+                WHERE B.JOBREQID IS NULL
+                WITH HINT (NO_INLINE)
+                ;
+
+    O_TABLE_OLD =   SELECT  A.JOBREQID
+                        ,A.APPLICATIONID
+                        ,A.CUDKEY
+                        ,A.RECORD
+                FROM    :I_TABLE A
+                INNER JOIN JOBAPPLICATION B
+                ON A.JOBREQID = B.JOBREQID
+                AND A.APPLICATIONID = B.APPLICATIONID
+                WITH HINT (NO_INLINE)
+                ;
+
+    INSERT INTO JOBAPPLICATION(JOBREQID,APPLICATIONID,CUDKEY,RECORD,CREATEDDATETIME,LASTMODIFIEDDATETIME,CREATEDBY,LASTMODIFIEDBY)    
+    SELECT JOBREQID,APPLICATIONID,CUDKEY,RECORD,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,CURRENT_USER,CURRENT_USER FROM :O_TABLE_NEW;
+
+	IF NOT IS_EMPTY(:O_TABLE_OLD) THEN
+        MERGE INTO JOBAPPLICATION A USING :O_TABLE_OLD B 
+            ON A.JOBREQID = B.JOBREQID
+            AND A.APPLICATIONID = B.APPLICATIONID
+        WHEN MATCHED THEN UPDATE SET A.RECORD = B.RECORD, A.CUDKEY = B.CUDKEY, A.LASTMODIFIEDDATETIME = CURRENT_TIMESTAMP, A.LASTMODIFIEDBY = CURRENT_USER
+        ;
+    END IF;
+
+    O_TABLE =  SELECT  JOBREQID
+                    ,APPLICATIONID
+                    ,CUDKEY
+                FROM    :O_TABLE_OLD
+               UNION ALL
+               SELECT  JOBREQID
+                    ,APPLICATIONID
+                    ,CUDKEY
+                FROM    :O_TABLE_NEW 
+            ;                
+END

@@ -1,0 +1,50 @@
+PROCEDURE POSITIONKEY_SAVE_PROC (
+    IN  I_TABLE TABLE(CODE NVARCHAR(20),
+                     CUDKEY NVARCHAR(1)        
+    ),
+    OUT O_TABLE TABLE(CODE NVARCHAR(20),
+                     CUDKEY NVARCHAR(1)                   
+    )
+    
+)
+LANGUAGE SQLSCRIPT
+SQL SECURITY INVOKER 
+
+AS
+BEGIN
+O_TABLE_NEW =   SELECT  A.CODE
+                        ,A.CUDKEY
+                FROM    :I_TABLE A
+                LEFT OUTER JOIN POSITIONKEY B
+                ON A.CODE = B.CODE    
+                WHERE B.CODE IS NULL
+                WITH HINT (NO_INLINE)
+                ;
+
+    O_TABLE_OLD =   SELECT  A.CODE
+                        ,A.CUDKEY
+                FROM    :I_TABLE A
+                INNER JOIN POSITIONKEY B
+                ON A.CODE = B.CODE         
+                WITH HINT (NO_INLINE)
+                ;
+
+    INSERT INTO POSITIONKEY(CODE,CUDKEY,CREATEDDATETIME,LASTMODIFIEDDATETIME,CREATEDBY,LASTMODIFIEDBY)   
+    SELECT CODE, CUDKEY, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_USER, CURRENT_USER FROM :O_TABLE_NEW
+    ;
+
+	IF NOT IS_EMPTY(:O_TABLE_OLD) THEN
+        MERGE INTO POSITIONKEY A USING :O_TABLE_OLD B 
+            ON A.CODE = B.CODE
+        WHEN MATCHED THEN UPDATE SET A.CUDKEY = B.CUDKEY, A.LASTMODIFIEDDATETIME = CURRENT_TIMESTAMP, A.LASTMODIFIEDBY = CURRENT_USER;
+    END IF;
+
+    O_TABLE =  SELECT  CODE
+                    ,CUDKEY
+            FROM    :O_TABLE_OLD
+            UNION ALL
+            SELECT  CODE
+                    ,CUDKEY                
+            FROM    :O_TABLE_NEW 
+        ;                         
+END

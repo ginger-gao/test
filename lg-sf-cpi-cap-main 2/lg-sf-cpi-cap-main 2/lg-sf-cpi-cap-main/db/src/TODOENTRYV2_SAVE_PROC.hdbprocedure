@@ -1,0 +1,62 @@
+PROCEDURE TODOENTRYV2_SAVE_PROC (
+    IN  I_TABLE TABLE(TODOENTRYID NVARCHAR(128),
+                     CUDKEY NVARCHAR(1),
+                     RECORD NCLOB              
+    ),
+    OUT O_TABLE TABLE(TODOENTRYID NVARCHAR(128),
+                    CUDKEY NVARCHAR(1)                  
+    )
+    
+)
+LANGUAGE SQLSCRIPT
+SQL SECURITY INVOKER 
+
+AS
+BEGIN
+
+    DECLARE v_cnt BIGINT;
+
+    SELECT COUNT(*)
+    INTO   v_cnt
+    FROM   :I_TABLE
+    ;
+
+    O_TABLE_NEW =   SELECT A.TODOENTRYID
+                        ,A.CUDKEY
+                        ,A.RECORD
+                FROM    :I_TABLE A
+                LEFT OUTER JOIN TODOENTRYV2 B
+                ON A.TODOENTRYID = B.TODOENTRYID
+                WHERE B.TODOENTRYID IS NULL
+                WITH HINT (NO_INLINE)
+                ;
+
+    O_TABLE_OLD =   SELECT  A.TODOENTRYID
+                        ,A.CUDKEY
+                        ,A.RECORD
+                FROM    :I_TABLE A
+                INNER JOIN TODOENTRYV2 B
+                ON A.TODOENTRYID = B.TODOENTRYID     
+                WITH HINT (NO_INLINE)
+                ;
+
+    INSERT INTO TODOENTRYV2(TODOENTRYID,CUDKEY,RECORD,CREATEDDATETIME,LASTMODIFIEDDATETIME,CREATEDBY,LASTMODIFIEDBY) 
+    SELECT TODOENTRYID, CUDKEY, RECORD, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_USER, CURRENT_USER FROM :O_TABLE_NEW
+    ;
+
+	IF NOT IS_EMPTY(:O_TABLE_OLD) THEN
+        MERGE INTO TODOENTRYV2 A USING :O_TABLE_OLD B 
+            ON A.TODOENTRYID = B.TODOENTRYID    
+        WHEN MATCHED THEN UPDATE SET A.RECORD = B.RECORD, A.CUDKEY = B.CUDKEY, A.LASTMODIFIEDDATETIME = CURRENT_TIMESTAMP, A.LASTMODIFIEDBY = CURRENT_USER
+        ;
+    END IF;
+
+    O_TABLE =  SELECT  TODOENTRYID
+                    ,CUDKEY
+                FROM    :O_TABLE_OLD
+               UNION ALL
+               SELECT  TODOENTRYID
+                    ,CUDKEY
+                FROM    :O_TABLE_NEW 
+            ;                
+END

@@ -1,0 +1,74 @@
+PROCEDURE POSITION_SAVE_PROC (
+    IN  I_TABLE TABLE(MDFSYSTEMRECORDID NVARCHAR(128),
+                     CODE NVARCHAR(128),
+                     CUDKEY NVARCHAR(1),
+                     JOBID NVARCHAR(14),
+                     RECORD NCLOB              
+    ),
+    OUT O_TABLE TABLE(MDFSYSTEMRECORDID NVARCHAR(128),
+                     CODE NVARCHAR(128),
+                     CUDKEY NVARCHAR(1),
+                     JOBID NVARCHAR(14)            
+    )
+    
+)
+LANGUAGE SQLSCRIPT
+SQL SECURITY INVOKER 
+
+AS
+BEGIN
+
+    DECLARE v_cnt BIGINT;
+
+    SELECT COUNT(*)
+    INTO   v_cnt
+    FROM   :I_TABLE
+    ;
+
+    O_TABLE_NEW =   SELECT  A.CODE
+                        ,A.MDFSYSTEMRECORDID
+                        ,A.CUDKEY
+                        ,A.JOBID
+                        ,A.RECORD
+                FROM    :I_TABLE A
+                LEFT OUTER JOIN POSITION B
+                ON A.MDFSYSTEMRECORDID = B.MDFSYSTEMRECORDID
+                WHERE B.MDFSYSTEMRECORDID IS NULL
+                WITH HINT (NO_INLINE)
+                ;
+
+    O_TABLE_OLD =   SELECT  A.CODE
+                        ,A.MDFSYSTEMRECORDID
+                        ,A.CUDKEY
+                        ,A.JOBID
+                        ,A.RECORD
+                FROM    :I_TABLE A
+                INNER JOIN POSITION B
+                ON A.MDFSYSTEMRECORDID = B.MDFSYSTEMRECORDID      
+                WITH HINT (NO_INLINE)
+                ;
+
+    INSERT INTO POSITION(MDFSYSTEMRECORDID,CODE,CUDKEY,JOBID,RECORD,CREATEDDATETIME,LASTMODIFIEDDATETIME,CREATEDBY,LASTMODIFIEDBY) 
+    SELECT MDFSYSTEMRECORDID,CODE,CUDKEY,JOBID,RECORD,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,CURRENT_USER,CURRENT_USER FROM :O_TABLE_NEW;
+    
+
+	IF NOT IS_EMPTY(:O_TABLE_OLD) THEN
+        MERGE INTO POSITION A USING :O_TABLE_OLD B 
+            ON A.MDFSYSTEMRECORDID = B.MDFSYSTEMRECORDID      
+        WHEN MATCHED THEN UPDATE SET A.CODE = B.CODE,  A.RECORD = B.RECORD, A.CUDKEY = B.CUDKEY, A.JOBID = B.JOBID, A.LASTMODIFIEDDATETIME = CURRENT_TIMESTAMP, A.LASTMODIFIEDBY = CURRENT_USER
+        ;
+    END IF;
+
+    O_TABLE =  SELECT  MDFSYSTEMRECORDID 
+                        ,CODE
+                        ,CUDKEY
+                        ,JOBID
+                FROM    :O_TABLE_OLD
+               UNION ALL
+               SELECT  MDFSYSTEMRECORDID
+                        ,CODE 
+                        ,CUDKEY
+                        ,JOBID
+                FROM    :O_TABLE_NEW 
+            ;                
+END

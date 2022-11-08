@@ -1,0 +1,50 @@
+PROCEDURE PHOTOKEY_SAVE_PROC (
+    IN  I_TABLE TABLE(PHOTOID NVARCHAR(20),
+                     CUDKEY NVARCHAR(1)        
+    ),
+    OUT O_TABLE TABLE(PHOTOID NVARCHAR(20),
+                     CUDKEY NVARCHAR(1)                   
+    )
+    
+)
+LANGUAGE SQLSCRIPT
+SQL SECURITY INVOKER 
+
+AS
+BEGIN
+O_TABLE_NEW =   SELECT  A.PHOTOID
+                        ,A.CUDKEY
+                FROM    :I_TABLE A
+                LEFT OUTER JOIN PHOTOKEY B
+                ON A.PHOTOID = B.PHOTOID    
+                WHERE B.PHOTOID IS NULL
+                WITH HINT (NO_INLINE)
+                ;
+
+    O_TABLE_OLD =   SELECT  A.PHOTOID
+                        ,A.CUDKEY
+                FROM    :I_TABLE A
+                INNER JOIN PHOTOKEY B
+                ON A.PHOTOID = B.PHOTOID         
+                WITH HINT (NO_INLINE)
+                ;
+
+    INSERT INTO PHOTOKEY(PHOTOID,CUDKEY,CREATEDDATETIME,LASTMODIFIEDDATETIME,CREATEDBY,LASTMODIFIEDBY)   
+    SELECT PHOTOID, CUDKEY, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_USER, CURRENT_USER FROM :O_TABLE_NEW
+    ;
+
+	IF NOT IS_EMPTY(:O_TABLE_OLD) THEN
+        MERGE INTO PHOTOKEY A USING :O_TABLE_OLD B 
+            ON A.PHOTOID = B.PHOTOID
+        WHEN MATCHED THEN UPDATE SET A.CUDKEY = B.CUDKEY, A.LASTMODIFIEDDATETIME = CURRENT_TIMESTAMP, A.LASTMODIFIEDBY = CURRENT_USER;
+    END IF;
+
+    O_TABLE =  SELECT  PHOTOID
+                    ,CUDKEY
+            FROM    :O_TABLE_OLD
+            UNION ALL
+            SELECT  PHOTOID
+                    ,CUDKEY                
+            FROM    :O_TABLE_NEW 
+        ;                         
+END

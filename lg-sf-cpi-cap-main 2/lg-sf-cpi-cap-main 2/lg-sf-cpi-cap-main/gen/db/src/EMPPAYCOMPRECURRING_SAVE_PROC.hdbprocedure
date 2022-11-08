@@ -1,0 +1,97 @@
+PROCEDURE EMPPAYCOMPRECURRING_SAVE_PROC (
+    IN  I_TABLE TABLE(USERID NVARCHAR(20),
+                     PAYCOMPONENT NVARCHAR(128),
+                     STARTDATE NVARCHAR(25),
+                     SEQNUMBER NVARCHAR(2),
+                     CUDKEY NVARCHAR(1),
+                     RECORD NCLOB              
+    ),
+    OUT O_TABLE TABLE(USERID NVARCHAR(20),
+                     PAYCOMPONENT NVARCHAR(128),
+                     STARTDATE NVARCHAR(25),
+                     SEQNUMBER NVARCHAR(2),
+                     CUDKEY NVARCHAR(1),
+                     UNIQUEKEY BIGINT                     
+    )
+    
+)
+LANGUAGE SQLSCRIPT
+SQL SECURITY INVOKER 
+
+AS
+BEGIN
+
+    DECLARE v_cnt BIGINT;
+
+    SELECT COUNT(*)
+    INTO   v_cnt
+    FROM   :I_TABLE
+    ;
+
+    O_TABLE_NEW =   SELECT  A.USERID
+                        ,A.PAYCOMPONENT
+                        ,A.STARTDATE
+                        ,A.SEQNUMBER
+                        ,A.CUDKEY
+                        ,A.RECORD
+                        ,CASE WHEN B.UNIQUEKEY IS NULL THEN EMPPAYCOMPRECURRING_USERID_SEQ.NEXTVAL ELSE B.UNIQUEKEY END AS UNIQUEKEY
+                FROM    :I_TABLE A
+                LEFT OUTER JOIN (SELECT * FROM EMPPAYCOMPRECURRING WHERE CUDKEY != 'D') B
+                ON A.USERID = B.USERID
+                AND A.PAYCOMPONENT = B.PAYCOMPONENT
+                AND A.STARTDATE = B.STARTDATE
+                AND A.SEQNUMBER = B.SEQNUMBER         
+                WHERE B.UNIQUEKEY IS NULL
+                WITH HINT (NO_INLINE)
+                ;
+
+    O_TABLE_OLD =   SELECT  A.USERID
+                        ,A.PAYCOMPONENT
+                        ,A.STARTDATE
+                        ,A.SEQNUMBER
+                        ,A.RECORD
+                        ,A.CUDKEY
+                        ,B.UNIQUEKEY
+                FROM    :I_TABLE A
+                INNER JOIN (SELECT * FROM EMPPAYCOMPRECURRING WHERE CUDKEY != 'D') B
+                ON A.USERID = B.USERID
+                AND A.PAYCOMPONENT = B.PAYCOMPONENT
+                AND A.STARTDATE = B.STARTDATE
+                AND A.SEQNUMBER = B.SEQNUMBER         
+                WITH HINT (NO_INLINE)
+                ;
+
+    INSERT INTO EMPPAYCOMPRECURRING(USERID,PAYCOMPONENT,STARTDATE,SEQNUMBER,CUDKEY,RECORD,UNIQUEKEY,CREATEDDATETIME,LASTMODIFIEDDATETIME,CREATEDBY,LASTMODIFIEDBY)   
+    SELECT USERID, PAYCOMPONENT,STARTDATE, SEQNUMBER, CUDKEY, RECORD, UNIQUEKEY, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_USER, CURRENT_USER FROM :O_TABLE_NEW
+    ;
+
+	IF NOT IS_EMPTY(:O_TABLE_OLD) THEN
+        MERGE INTO EMPPAYCOMPRECURRING A USING :O_TABLE_OLD B 
+            ON A.USERID = B.USERID
+            AND A.PAYCOMPONENT = B.PAYCOMPONENT
+            AND A.STARTDATE = B.STARTDATE
+            AND A.SEQNUMBER = B.SEQNUMBER
+            AND A.UNIQUEKEY = B.UNIQUEKEY
+        WHEN MATCHED THEN UPDATE SET A.RECORD = B.RECORD, A.CUDKEY = B.CUDKEY, A.LASTMODIFIEDDATETIME = CURRENT_TIMESTAMP, A.LASTMODIFIEDBY = CURRENT_USER
+        ;
+    END IF;
+
+
+
+    O_TABLE =  SELECT  USERID
+                        ,PAYCOMPONENT
+                        ,STARTDATE
+                        ,SEQNUMBER
+                        ,CUDKEY
+                        ,UNIQUEKEY    
+                FROM    :O_TABLE_OLD
+               UNION ALL
+               SELECT  USERID
+                        ,PAYCOMPONENT
+                        ,STARTDATE
+                        ,SEQNUMBER
+                        ,CUDKEY
+                        ,UNIQUEKEY    
+                FROM    :O_TABLE_NEW 
+            ;                
+END
